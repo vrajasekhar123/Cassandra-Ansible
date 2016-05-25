@@ -1,0 +1,67 @@
+---
+- hosts: 10.0.0.31
+  tasks:
+  - name: Add java repo
+    apt_repository: repo=ppa:webupd8team/java state=present
+  - name: Select the oracle license
+    shell: echo debconf shared/accepted-oracle-license-v1-1 select true | sudo debconf-set-selections
+  - name: Install Java
+    apt: pkg=oracle-java7-installer state=latest update_cache=yes force=yes
+  - name: Export JAVA_HOME
+    shell: echo 'JAVA_HOME="/usr/lib/jvm/java-7-oracle"' >> /etc/environment
+  - name: Adding the cassandra repo
+    shell: 'echo "deb http://www.apache.org/dist/cassandra/debian 22x main" > /etc/apt/sources.list.d/cassandra.sources.list'
+  - name: Adding the cassandra source repo
+    shell: 'echo "deb-src http://www.apache.org/dist/cassandra/debian 22x main" >> /etc/apt/sources.list.d/cassandra.sources.list'
+  - name: Adding first key
+    command: gpg --keyserver pgp.mit.edu --recv-keys F758CE318D77295D
+    command: gpg --export --armor F758CE318D77295D | sudo apt-key add -
+  - name: Adding second key
+    command: gpg --keyserver pgp.mit.edu --recv-keys 2B5C1B00
+    command: gpg --export --armor 2B5C1B00 | sudo apt-key add -
+  - name: Adding third key
+    command: gpg --keyserver pgp.mit.edu --recv-keys 0353B12C
+    command: gpg --export --armor 0353B12C | sudo apt-key add -
+  - name: Install Cassandra
+    apt: pkg=cassandra state=installed update_cache=true force=yes
+  - name: Install graphite-web
+    apt: pkg=graphite-web state=installed force=yes
+  - name: Install graphite-carbon
+    apt: pkg=graphite-carbon state=installed force=yes
+  - name: Install PostgreSQL
+    apt: pkg=postgresql state=installed force=yes
+  - name: Install libpq-dev
+    apt: pkg=libpq-dev state=installed force=yes
+  - name: Install python-psycopg2
+    apt: pkg=python-psycopg2 state=installed force=yes
+  - name: create user for Django in PostgreSQL
+    postgresql_user: name=graphite password=password
+  - name: Create database for graphite
+    postgresql_db: name=graphite owner=graphite 
+  - name: configuring grphite local_settings.py file
+    command: scp /var/tmp/local_settings.py /etc/graphite/local_settings.py
+  - name: sync database
+    command: "sudo graphite-manage syncdb"
+  - name: configuring graphite-carbon file
+    command: scp /var/tmp/graphite-carbon /etc/default/graphite-carbon
+  - name: configuring storage schema
+    command: scp /var/tmp/storage-schemas.conf /etc/carbon/storage-schemas.conf
+  - name: copy storage-aggregation file
+    command: scp /usr/share/doc/graphite-carbon/examples/storage-aggregation.conf.example /etc/carbon/storage-aggregation.conf
+  - name: Start carbon-cache
+    service: name=carbon-cache state=started
+  - name: Install Apache
+    apt: pkg=apache2 state=installed force=yes
+  - name: Install libapache2-mod-wsgi
+    apt: pkg=libapache2-mod-wsgi state=installed force=yes
+  - name: disable default virtual host
+    command: "a2dissite 000-default"
+  - name: copy apache2-graphite.conf file
+    command: scp /usr/share/graphite-web/apache2-graphite.conf /etc/apache2/sites-available
+  - name: enable the virtual host
+    command: "a2ensite apache2-graphite"
+  - name: Reload apache2 service
+    service: name=apache2 state=reloaded
+  - name: setting cron for stats
+    command: echo "* * * * * /etc/cassandra/cassandra_stats.sh" >> /var/spool/cron/crontabs/root
+  - command: chmod 600 /var/spool/cron/crontabs/root
